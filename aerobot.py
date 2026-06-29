@@ -162,16 +162,34 @@ CHANNELS         = 1
 MAX_TOKENS       = 250
 CHAT_TEMPERATURE = 0.7
 
-ENERGY_THRESHOLD     = 0.010
-SILENCE_AFTER_SPEECH = 0.8
+ENERGY_THRESHOLD     = float(os.getenv("ENERGY_THRESHOLD", "0.28"))
+SILENCE_AFTER_SPEECH = 1.2
 PRE_ROLL_CHUNKS      = 6
-MIN_SPEECH_SECS      = 0.5
+MIN_SPEECH_SECS      = 0.6
 CHUNK_SECS           = 0.1
 
-IDLE_TIMEOUT         = 10.0
+# Extra quiet time required right after the bot stops talking before
+# the mic stream is even opened again. This is the no-hardware fix
+# for echo/feedback from the Klarity mic hearing the speaker: instead
+# of muting the mic, we just don't listen at all until any ringing
+# from the speaker has had time to die down, and we require a louder
+# burst (ENERGY_THRESHOLD above) before treating anything as speech.
+POST_SPEECH_COOLDOWN = float(os.getenv("POST_SPEECH_COOLDOWN", "0.6"))
+
+IDLE_TIMEOUT         = 15.0
 IDLE_POLL_TIMEOUT    = 60.0
 
 GREEN_LED_PIN = 18
+
+# ── Echo/feedback handling — pure software, no mixer changes ──────
+# Rather than muting/unmuting the Zebronics Klarity mic in hardware
+# or via the OS mixer, we keep your default audio settings untouched
+# and instead (a) never have the mic stream open while speak() is
+# playing TTS audio (it already wasn't), and (b) raise the VAD
+# energy threshold + add a short post-reply cooldown so any leftover
+# echo/ringing from the speaker doesn't get picked up as the start
+# of the next utterance. See ENERGY_THRESHOLD and
+# POST_SPEECH_COOLDOWN below.
 
 WAKE_WORDS = ["hello", "hey", "hello aerobot", "hey aerobot", "aerobot"]
 
@@ -872,6 +890,7 @@ def speak(text: str, lang: str = "en") -> None:
         if tmp_path and os.path.exists(tmp_path):
             with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
+        time.sleep(POST_SPEECH_COOLDOWN)  # let speaker echo die down before the mic listens again
 
 
 def _speak_direct(text: str, voice: str) -> None:
